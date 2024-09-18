@@ -1,6 +1,6 @@
 import pytest
-from llmkit.memory import MemoryManager
-from llmkit.core import LLMConfig
+from llmcore.memory import MemoryManager
+from llmcore.core import LLMConfig
 
 @pytest.mark.asyncio
 async def test_memory_manager_add_and_retrieve():

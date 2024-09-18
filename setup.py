@@ -4,11 +4,11 @@ with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
 setup(
-    name="llmkit",
+    name="llmcore",
     version="0.0.1",
     author="Sunny Singh",
     author_email="ishy.singh@gmail.com",
-    description="LLMKit: Essential tools for LLM development - models, prompts, embeddings, agents, chains, and more.",
+    description="LLMCore: Essential tools for LLM development - models, prompts, embeddings, agents, chains, and more.",
     long_description=long_description,
     long_description_content_type="text/markdown",
     packages=find_packages(),

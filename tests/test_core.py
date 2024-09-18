@@ -2,10 +2,10 @@ import pytest
 import os
 import aiohttp
 from unittest.mock import AsyncMock, patch
-from llmkit.core import LLM, LLMAPIError, LLMJSONParseError, LLMNetworkError
-from llmkit.config import LLMConfig
-from llmkit.prompt import Prompt, PromptTemplate
-from llmkit.contracts import ConversationTurn
+from llmcore.core import LLM, LLMAPIError, LLMJSONParseError, LLMNetworkError
+from llmcore.config import LLMConfig
+from llmcore.prompt import Prompt, PromptTemplate
+from llmcore.contracts import ConversationTurn
 
 @pytest.fixture
 def mock_env_vars():
@@ -18,17 +18,17 @@ def mock_env_vars():
 
 @pytest.fixture
 def mock_openai_client():
-    with patch('llmkit.core.OpenAIClientAdapter') as mock:
+    with patch('llmcore.core.OpenAIClientAdapter') as mock:
         yield mock
 
 @pytest.fixture
 def mock_anthropic_client():
-    with patch('llmkit.core.AnthropicClientAdapter') as mock:
+    with patch('llmcore.core.AnthropicClientAdapter') as mock:
         yield mock
 
 @pytest.fixture
 def mock_google_client():
-    with patch('llmkit.core.GoogleGeminiClientAdapter') as mock:
+    with patch('llmcore.core.GoogleGeminiClientAdapter') as mock:
         yield mock
 
 @pytest.fixture

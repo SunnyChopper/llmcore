@@ -1,6 +1,6 @@
-# LLMKit
+# LLMCore
 
-LLMKit is a powerful Python library for working with Large Language Models (LLMs). It provides a flexible and extensible interface for interacting with various LLM providers and building complex workflows.
+LLMCore is a powerful Python library for working with Large Language Models (LLMs). It provides a flexible and extensible interface for interacting with various LLM providers and building complex workflows.
 
 ## Features
 
@@ -16,15 +16,15 @@ LLMKit is a powerful Python library for working with Large Language Models (LLMs
 
 ## Installation
 
-You can install LLMKit using pip:
+You can install LLMCore using pip:
 
 ```bash
-pip install llmkit
+pip install llmcore
 ```
 
 ## Configuration
 
-Before using LLMKit, you need to set up API keys for the LLM providers you want to use. Set the following environment variables:
+Before using LLMCore, you need to set up API keys for the LLM providers you want to use. Set the following environment variables:
 
 - `OPENAI_API_KEY` for OpenAI
 - `ANTHROPIC_API_KEY` for Anthropic
@@ -36,7 +36,7 @@ Before using LLMKit, you need to set up API keys for the LLM providers you want 
 To initialize an LLM, use the `LLM` class and specify the provider and model you want to use. For example:
 
 ```python
-from llmkit.core import LLM
+from llmcore.core import LLM
 
 llm = LLM(provider="openai", model="gpt-4o")
 ```
@@ -46,7 +46,7 @@ llm = LLM(provider="openai", model="gpt-4o")
 You can also set configuration options for the LLM, such as temperature, max_tokens, and top_p:
 
 ```python
-from llmkit.core import LLM, LLMConfig
+from llmcore.core import LLM, LLMConfig
 
 config = LLMConfig(
     temperature=0.7,
@@ -73,7 +73,7 @@ The full list of configuration options is in the table below:
 You can send a simple prompt to the LLM using the `send_input` method. For example:
 
 ```python
-from llmkit.core import LLM
+from llmcore.core import LLM
 
 openai_llm = LLM(provider="openai", model="gpt-4o")
 response = openai_llm.send_input("Explain the concept of recursion in programming.")
@@ -85,7 +85,7 @@ print(response)
 Stream the output of the LLM using the `stream_input` method. For example:
 
 ```python
-from llmkit.core import LLM
+from llmcore.core import LLM
 
 openai_llm = LLM(provider="openai", model="gpt-4o")
 for chunk in openai_llm.stream_input("Write a short story about a robot learning to paint."):
@@ -97,8 +97,8 @@ for chunk in openai_llm.stream_input("Write a short story about a robot learning
 Create prompt templates to reuse prompts with dynamic content. For example:
 
 ```python
-from llmkit.core import LLM
-from llmkit.prompt import PromptTemplate
+from llmcore.core import LLM
+from llmcore.prompt import PromptTemplate
 
 code_review_template = PromptTemplate(
     "Review the following {{language}} code:\n\n```{{language}}\n{{code}}\n```\n\nProvide feedback on code quality, potential bugs, and suggestions for improvement.",
@@ -126,9 +126,9 @@ print(response)
 ### Example 1: Summarizing and Translating Text Using LLM Chains
 
 ```python
-from llmkit.core import LLM
-from llmkit.chain import LLMChainBuilder
-from llmkit.prompt import PromptTemplate
+from llmcore.core import LLM
+from llmcore.chain import LLMChainBuilder
+from llmcore.prompt import PromptTemplate
 
 # Initialize the LLM
 llm = LLM(provider="openai", model="gpt-4o")
@@ -162,9 +162,9 @@ print(f"French Summary: {result['french_summary']}")
 ### Example 2: Managing Conversation Memory
 
 ```python
-from llmkit.core import LLM, PromptTemplate
-from llmkit.memory import MemoryManager
-from llmkit.contracts import ConversationTurn
+from llmcore.core import LLM, PromptTemplate
+from llmcore.memory import MemoryManager
+from llmcore.contracts import ConversationTurn
 
 # Initialize the LLM with memory
 memory_manager = MemoryManager(config=LLMConfig(), capacity=32000)
@@ -196,8 +196,8 @@ print(response)
 
 ```python
 import asyncio
-from llmkit.embeddings import Embeddings, CodebaseEmbeddings
-from llmkit.utils import cosine_similarity
+from llmcore.embeddings import Embeddings, CodebaseEmbeddings
+from llmcore.utils import cosine_similarity
 
 async def main():
     # Initialize embeddings
@@ -228,8 +228,8 @@ asyncio.run(main())
 ### Example 4: Prompt Templating with Parameter Validation
 
 ```python
-from llmkit.core import LLM
-from llmkit.prompt import PromptTemplate
+from llmcore.core import LLM
+from llmcore.prompt import PromptTemplate
 from typing import List
 
 # Define a prompt template for code review
@@ -261,10 +261,10 @@ print(response["suggestions"])
 ### Example 5: Chaining Multiple LLM Calls with Memory
 
 ```python
-from llmkit.core import LLM
-from llmkit.chain import LLMChainBuilder
-from llmkit.prompt import PromptTemplate
-from llmkit.memory import MemoryManager
+from llmcore.core import LLM
+from llmcore.chain import LLMChainBuilder
+from llmcore.prompt import PromptTemplate
+from llmcore.memory import MemoryManager
 
 # Initialize the LLM
 llm = LLM(provider="openai", model="gpt-4o")
@@ -310,7 +310,7 @@ print(f"Sentiment: {result['sentiment']}")
 
 ## API Reference
 
-### `llmkit/core.py`
+### `llmcore/core.py`
 
 #### Classes
 
@@ -403,7 +403,7 @@ print(f"Sentiment: {result['sentiment']}")
     - `update_config`: Update LLM configuration.
     - Additional internal methods for JSON parsing, type validation, etc.
 
-### `llmkit/chain.py`
+### `llmcore/chain.py`
 
 #### Classes
 
@@ -461,7 +461,7 @@ print(f"Sentiment: {result['sentiment']}")
       # Additional internal methods for placeholder extraction
   ```
 
-### `llmkit/utils.py`
+### `llmcore/utils.py`
 
 Utility functions used across the library.
 
@@ -476,7 +476,7 @@ def cosine_similarity(v1: List[float], v2: List[float]) -> float:
     return np.dot(v1_array, v2_array) / (np.linalg.norm(v1_array) * np.linalg.norm(v2_array))
 ```
 
-### `llmkit/memory.py`
+### `llmcore/memory.py`
 
 Handles memory management for context-aware interactions with LLMs.
 
@@ -524,7 +524,7 @@ Handles memory management for context-aware interactions with LLMs.
           self.memories.clear()
   ```
 
-### `llmkit/prompt.py`
+### `llmcore/prompt.py`
 
 Handles prompt templating with placeholders and input validation.
 
@@ -659,7 +659,7 @@ Handles prompt templating with placeholders and input validation.
           return formatted_prompt
   ```
 
-### `llmkit/logger.py`
+### `llmcore/logger.py`
 
 Sets up and manages logging throughout the library.
 
@@ -705,6 +705,6 @@ Sets up and manages logging throughout the library.
 **Notes:**
 - These examples cover various functionalities such as LLM chaining, memory management, embedding and semantic search, prompt templating with parameter validation, and advanced chaining with memory support.
 - Ensure you have the necessary environment variables set for the respective LLM providers before running these examples.
-- Refer to the corresponding code files like `llmkit/core.py`, `llmkit/chain.py`, `llmkit/memory.py`, and others to understand the underlying implementations and for any further customizations.
+- Refer to the corresponding code files like `llmcore/core.py`, `llmcore/chain.py`, `llmcore/memory.py`, and others to understand the underlying implementations and for any further customizations.
 
 If you need to modify other files or require additional examples, feel free to ask!

@@ -1,5 +1,5 @@
 import pytest
-from llmkit.prompt import Prompt, PromptTemplate
+from llmcore.prompt import PromptTemplate
 
 def test_prompt_template_creation():
     template = "Hello, {{name}}!"

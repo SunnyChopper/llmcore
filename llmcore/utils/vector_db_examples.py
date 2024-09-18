@@ -6,9 +6,9 @@ from datetime import datetime, timedelta
 import json
 import uuid
 import math
-from llmkit.core import LLM, LLMConfig
-from llmkit.embeddings import Embeddings
-from llmkit.logger import setup_logger
+from llmcore.core import LLM, LLMConfig
+from llmcore.embeddings import Embeddings
+from llmcore.logger import setup_logger
 
 logger = setup_logger(__name__)
 

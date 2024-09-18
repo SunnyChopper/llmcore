@@ -2,16 +2,18 @@ from typing import List, Dict, Any
 import aiohttp
 import os
 
-from llmkit.vector_databases.vector_database_base import VectorDatabase
-from llmkit.logger import setup_logger, log
+from llmcore.vector_databases.vector_database_base import VectorDatabase
+from llmcore.logger import setup_logger, log
 
 logger = setup_logger(__name__)
 
-class ChromaDatabase(VectorDatabase):
-    def __init__(self, endpoint: str = "http://localhost:8000", collection_name: str = "llmkit-collection"):
+class PineconeDatabase(VectorDatabase):
+    def __init__(self, endpoint: str, api_key: str, index_name: str = "llmcore-index"):
         self.endpoint = endpoint
-        self.collection_name = collection_name
+        self.api_key = api_key
+        self.index_name = index_name
         self.headers = {
+            "Api-Key": self.api_key,
             "Content-Type": "application/json"
         }
 
@@ -25,25 +27,25 @@ class ChromaDatabase(VectorDatabase):
                 }
             ]
         }
-        url = f"{self.endpoint}/collections/{self.collection_name}/vectors"
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, headers=self.headers, json=data) as response:
-                if response.status not in (200, 201):
-                    error = await response.text()
-                    log(logger, "ERROR", f"Failed to add vector to ChromaDB: {error}")
-                    raise Exception(f"Failed to add vector to ChromaDB: {error}")
-
-    async def search_vectors(self, query_vector: List[float], top_k: int = 5) -> List[Dict[str, Any]]:
-        data = {
-            "query_vector": query_vector,
-            "top_k": top_k,
-            "include_metadata": True
-        }
-        url = f"{self.endpoint}/collections/{self.collection_name}/search"
+        url = f"{self.endpoint}/vectors/upsert"
         async with aiohttp.ClientSession() as session:
             async with session.post(url, headers=self.headers, json=data) as response:
                 if response.status != 200:
                     error = await response.text()
-                    log(logger, "ERROR", f"Failed to search vectors in ChromaDB: {error}")
-                    raise Exception(f"Failed to search vectors in ChromaDB: {error}")
+                    log(logger, "ERROR", f"Failed to add vector to Pinecone: {error}")
+                    raise Exception(f"Failed to add vector to Pinecone: {error}")
+
+    async def search_vectors(self, query_vector: List[float], top_k: int = 5) -> List[Dict[str, Any]]:
+        data = {
+            "vector": query_vector,
+            "topK": top_k,
+            "includeMetadata": True
+        }
+        url = f"{self.endpoint}/query"
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, headers=self.headers, json=data) as response:
+                if response.status != 200:
+                    error = await response.text()
+                    log(logger, "ERROR", f"Failed to search vectors in Pinecone: {error}")
+                    raise Exception(f"Failed to search vectors in Pinecone: {error}")
                 return await response.json()

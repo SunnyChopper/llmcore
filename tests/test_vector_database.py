@@ -1,6 +1,5 @@
 import pytest
-import pytest_asyncio
-from llmkit.vector_databases.vector_database_base import VectorDatabase
+from llmcore.vector_databases.vector_database_base import VectorDatabase
 
 class MockVectorDatabase(VectorDatabase):
     async def add_vector(self, vector, metadata):

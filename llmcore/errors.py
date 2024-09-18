@@ -10,18 +10,18 @@ class StaticAnalysisError(Exception):
     def __str__(self):
         return f"{self.severity} at line {self.line}: {self.message}"
     
-class LLMKitError(Exception):
-    """Base exception class for LLMKit-specific errors."""
+class LLMCoreError(Exception):
+    """Base exception class for LLMCore-specific errors."""
 
     def __init__(self, message: str):
         self.message = message
         super().__init__(self.message)
 
     def __str__(self):
-        return f"LLMKitError: {self.message}"
+        return f"LLMCoreError: {self.message}"
 
 
-class ImportValidationError(LLMKitError):
+class ImportValidationError(LLMCoreError):
     """Exception raised when import validation fails."""
 
     def __init__(self, message: str, invalid_imports: list):
@@ -29,7 +29,7 @@ class ImportValidationError(LLMKitError):
         super().__init__(f"{message}. Invalid imports: {', '.join(invalid_imports)}")
 
 
-class SyntaxFixError(LLMKitError):
+class SyntaxFixError(LLMCoreError):
     """Exception raised when syntax fixing fails."""
 
     def __init__(self, message: str, line: int):

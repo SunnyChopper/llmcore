@@ -3,9 +3,9 @@ import logging
 import re
 from typing import List, Dict, Any, Optional, Union, get_origin, get_args, Iterator, AsyncIterator
 import json
-from llmkit.core import LLM, LLMConfig
-from llmkit.prompt import PromptTemplate
-from llmkit.logger import setup_logger, log
+from llmcore.core import LLM, LLMConfig
+from llmcore.prompt import PromptTemplate
+from llmcore.logger import setup_logger, log
 
 logger = setup_logger(__name__)
 

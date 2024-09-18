@@ -2,11 +2,11 @@ from typing import List, Dict, Any, Optional
 from scipy import spatial
 import numpy as np
 
-from llmkit.vector_databases.vector_database_base import VectorDatabase
-from llmkit.vector_databases.pinecone_database import PineconeDatabase
-from llmkit.vector_databases.chroma_database import ChromaDatabase
-from llmkit.core import LLMConfig
-from llmkit.logger import log, setup_logger
+from llmcore.vector_databases.vector_database_base import VectorDatabase
+from llmcore.vector_databases.pinecone_database import PineconeDatabase
+from llmcore.vector_databases.chroma_database import ChromaDatabase
+from llmcore.core import LLMConfig
+from llmcore.logger import log, setup_logger
 
 logger = setup_logger(__name__)
 

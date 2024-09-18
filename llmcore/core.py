@@ -8,12 +8,12 @@ import json
 import os
 import re
 
-from llmkit.prompt import Prompt
-from llmkit.logger import setup_logger, log
-from llmkit.config import LLMConfig
-from llmkit.contracts import ConversationTurn
-from llmkit.memory import MemoryManager
-from llmkit.embeddings import Embeddings
+from llmcore.prompt import Prompt
+from llmcore.logger import setup_logger, log
+from llmcore.config import LLMConfig
+from llmcore.contracts import ConversationTurn
+from llmcore.memory import MemoryManager
+from llmcore.embeddings import Embeddings
 
 logger = setup_logger(__name__)
 

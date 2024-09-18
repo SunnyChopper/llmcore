@@ -3,10 +3,10 @@ from dataclasses import dataclass
 from typing import List, Dict
 import os
 
-# LLMKit
-from llmkit.utils import cosine_similarity
-from llmkit.embeddings import Embeddings
-from llmkit.logger import setup_logger
+# LLMCore
+from llmcore.utils import cosine_similarity
+from llmcore.embeddings import Embeddings
+from llmcore.logger import setup_logger
 
 logger = setup_logger(__name__)
 
