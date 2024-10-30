@@ -1,4 +1,5 @@
 import aiohttp
+import asyncio
 from typing import List
 import os
 import tiktoken
@@ -16,10 +17,18 @@ class Embeddings:
             self.tokenizer = tiktoken.get_encoding("cl100k_base")
         self.max_tokens = 8000 
 
+    def embed(self, text: str) -> List[float]:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            return loop.run_until_complete(self.embed_async(text))
+        else:
+            return asyncio.run(self.embed_async(text))
+
     async def embed_async(self, text: str) -> List[float]:
         chunks = self._chunk_text(text)
-        embeddings = await self.embed_batch_async(chunks)
-        return self._average_embeddings(embeddings)
+        embeddings = await asyncio.gather(*[self._openai_embed_async([chunk]) for chunk in chunks])
+        flattened_embeddings = [embedding for sublist in embeddings for embedding in sublist]
+        return self._average_embeddings(flattened_embeddings)
 
     async def embed_batch_async(self, texts: List[str]) -> List[List[float]]:
         all_embeddings = []

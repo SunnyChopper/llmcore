@@ -46,3 +46,12 @@ logs/
 .cursorignore
 .pypirc
 .vscode
+
+# Artifacts
+data/
+runs/
+best_model.pth
+codebase_embeddings.pkl
+knowledge_graph/
+.env
+dev.py

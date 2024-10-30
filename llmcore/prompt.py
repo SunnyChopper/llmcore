@@ -1,13 +1,16 @@
-import re
-from typing import Dict, Any, Optional, List, Union, get_origin, get_args
+from typing import Dict, Any, Optional, List, Union, Set, get_origin, get_args
 import json
+import re
 
 class PromptTemplate:
+    PLACEHOLDER_PATTERN = re.compile(r'{{\s*(\w+)\s*}}')
+
     def __init__(self, template: str, required_params: Dict[str, type], output_json_structure: Optional[Dict[str, Any]] = None):
         self.template = template
         self.required_params = required_params
         self.output_json_structure = self._convert_types(output_json_structure) if output_json_structure else None
         self.placeholders = self._extract_placeholders()
+        self._validate_template()
 
     def _convert_types(self, structure: Dict[str, Any]) -> Dict[str, Any]:
         def convert(item):
@@ -28,8 +31,27 @@ class PromptTemplate:
 
         return {k: convert(v) for k, v in structure.items()}
 
-    def _extract_placeholders(self) -> set:
-        return set(re.findall(r'{{(\w+)}}', self.template))
+    def _extract_placeholders(self) -> Set[str]:
+        return set(match.group(1) for match in self.PLACEHOLDER_PATTERN.finditer(self.template))
+
+    def _validate_template(self):
+        """
+        Validates the template to ensure that it is a valid prompt.
+        """
+        if not self.template or self.template.strip() == "":
+            raise ValueError("Template cannot be empty")
+
+        # Check for unmatched braces or malformed placeholders
+        # This regex ensures that all opening braces have corresponding closing braces
+        if re.search(r'{{[^}]*$', self.template):
+            raise ValueError("Malformed template: Missing closing '}}' in placeholders.")
+        elif re.search(r'{{{', self.template) or re.search(r'}}}', self.template):
+            raise ValueError("Malformed template: Extra braces detected.")
+        
+        # Ensure all placeholders in the template are defined in required_params
+        undefined_placeholders = self.placeholders - set(self.required_params.keys())
+        if undefined_placeholders:
+            raise ValueError(f"Undefined placeholders detected: {undefined_placeholders}")
 
     def _validate_inputs(self, kwargs: Dict[str, Any]):
         for key, expected_type in self.required_params.items():
@@ -55,7 +77,11 @@ class PromptTemplate:
                     raise TypeError(f"Parameter {key} should be a dict")
                 if get_args(expected_type):
                     key_type, value_type = get_args(expected_type)
-                    if not all(isinstance(k, key_type) and isinstance(v, value_type) for k, v in value.items()):
+                    if key_type is str and value_type is Any:
+                        # Special case for Dict[str, Any]
+                        if not all(isinstance(k, str) for k in value.keys()):
+                            raise TypeError(f"All keys in {key} should be of type str")
+                    elif not all(isinstance(k, key_type) and (value_type is Any or isinstance(v, value_type)) for k, v in value.items()):
                         raise TypeError(f"All items in {key} should be of type {key_type}: {value_type}")
             elif not isinstance(value, origin_type):
                 raise TypeError(f"Parameter {key} should be of type {expected_type}")
@@ -66,6 +92,9 @@ class PromptTemplate:
 
 class Prompt:
     def __init__(self, template: PromptTemplate, **kwargs):
+        if not isinstance(template, PromptTemplate):
+            raise ValueError(f"Invalid template type provided to Prompt: {type(template)}")
+        
         self.template = template
         self.values = kwargs
 
@@ -81,8 +110,6 @@ class Prompt:
                 sanitized_kwargs[k] = {sk: self._sanitize_input(sv) for sk, sv in v.items()}
             else:
                 sanitized_kwargs[k] = self._sanitize_input(v)
-
-        print(f"Sanitized kwargs: {sanitized_kwargs}")
         
         def replace_placeholder(match):
             placeholder = match.group(1)

@@ -3,9 +3,6 @@ import aiohttp
 import os
 
 from llmcore.vector_databases.vector_database_base import VectorDatabase
-from llmcore.logger import setup_logger, log
-
-logger = setup_logger(__name__)
 
 class ChromaDatabase(VectorDatabase):
     def __init__(self, endpoint: str = "http://localhost:8000", collection_name: str = "llmcore-collection"):
@@ -30,7 +27,6 @@ class ChromaDatabase(VectorDatabase):
             async with session.post(url, headers=self.headers, json=data) as response:
                 if response.status not in (200, 201):
                     error = await response.text()
-                    log(logger, "ERROR", f"Failed to add vector to ChromaDB: {error}")
                     raise Exception(f"Failed to add vector to ChromaDB: {error}")
 
     async def search_vectors(self, query_vector: List[float], top_k: int = 5) -> List[Dict[str, Any]]:
@@ -44,6 +40,5 @@ class ChromaDatabase(VectorDatabase):
             async with session.post(url, headers=self.headers, json=data) as response:
                 if response.status != 200:
                     error = await response.text()
-                    log(logger, "ERROR", f"Failed to search vectors in ChromaDB: {error}")
                     raise Exception(f"Failed to search vectors in ChromaDB: {error}")
                 return await response.json()

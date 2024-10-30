@@ -1,6 +1,9 @@
 from typing import Dict, Any, Union, AsyncGenerator, Generator, List
+from concurrent.futures import ThreadPoolExecutor
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from urllib.parse import urljoin
+from functools import lru_cache
 import aiohttp
 import asyncio
 import typing
@@ -8,14 +11,11 @@ import json
 import os
 import re
 
-from llmcore.prompt import Prompt
-from llmcore.logger import setup_logger, log
+from llmcore.prompt import Prompt, PromptTemplate
 from llmcore.config import LLMConfig
 from llmcore.contracts import ConversationTurn
 from llmcore.memory import MemoryManager
 from llmcore.embeddings import Embeddings
-
-logger = setup_logger(__name__)
 
 class LLMAPIError(Exception):
     pass
@@ -28,6 +28,11 @@ class LLMPromptError(Exception):
 
 class LLMNetworkError(Exception):
     pass
+
+@dataclass
+class RelevantMemory:
+    content: str
+    score: float
 
 class APIEndpoints:
     OPENAI = "https://api.openai.com/v1"
@@ -62,7 +67,6 @@ class APIClientAdapter(LLMClientAdapter):
     async def _make_request(self, endpoint: str, data: Dict, headers: Dict) -> Dict:
         url = urljoin(self.base_url + "/", endpoint.lstrip("/"))
         # curl_command = self._generate_curl_command(url, data, headers)
-        # log(logger, "INFO", f"cURL command for debugging:\n{curl_command}")
         
         async with aiohttp.ClientSession() as session:
             try:
@@ -75,38 +79,10 @@ class APIClientAdapter(LLMClientAdapter):
                     error_content = e.message
                     error_message += f"\nResponse content: {error_content}"
                 except:
-                    error_message += "\nCouldn't retrieve response content."
-                
-                log(logger, "ERROR", error_message)
-                log(logger, "ERROR", f"Args: {e.args}")
-                log(logger, "ERROR", f"Status: {e.status}")
-                log(logger, "ERROR", f"Message: {e.message}")
-                log(logger, "ERROR", f"Headers: {e.headers}")
-                log(logger, "ERROR", f"Request Info: {e.request_info}")
-                log(logger, "ERROR", f"URL: {e.request_info.url}")
-                log(logger, "ERROR", f"Method: {e.request_info.method}")
-                log(logger, "ERROR", f"Headers: {e.request_info.headers}")
-                
-                if hasattr(e.request_info, 'body'):
-                    log(logger, "ERROR", f"Request Body: {e.request_info.body}")
-                
-                if hasattr(e, 'history'):
-                    for i, resp in enumerate(e.history):
-                        log(logger, "ERROR", f"Redirect {i + 1}: {resp.status} - {resp.url}")
-                
-                # Parse the error message to extract more detailed information
-                try:
-                    error_dict = json.loads(e.message)
-                    if 'error' in error_dict and 'message' in error_dict['error']:
-                        detailed_error = error_dict['error']['message']
-                        log(logger, "ERROR", f"Detailed error: {detailed_error}")
-                except json.JSONDecodeError:
-                    log(logger, "ERROR", "Failed to parse error message as JSON")
-                
+                    error_message += "\nCouldn't retrieve response content." 
                 raise LLMAPIError(error_message)
             except aiohttp.ClientError as e:
                 error_message = f"Network error occurred: {str(e)}"
-                log(logger, "ERROR", error_message)
                 raise LLMNetworkError(error_message)
 
     async def _stream_request(self, endpoint: str, data: Dict, headers: Dict) -> AsyncGenerator[Dict, None]:
@@ -260,12 +236,9 @@ class AnthropicClientAdapter(APIClientAdapter):
                         if "credit balance is too low" in error_message:
                             raise LLMAPIError(f"Anthropic API request failed: Insufficient credits. {error_message}")
                 except json.JSONDecodeError as json_err:
-                    log(logger, "ERROR", f"Failed to parse error response as JSON: {json_err}")
-                    log(logger, "DEBUG", f"Raw error response: {e.message}")
-            log(logger, "ERROR", f"Anthropic API error: {e}")
+                    pass
             raise LLMAPIError(f"Anthropic API request failed: {e}")
         except Exception as e:
-            log(logger, "ERROR", f"Anthropic API error: {e}")
             raise LLMAPIError(f"Anthropic API request failed: {e}")
 
     async def stream_prompt(self, prompt: str, config: LLMConfig) -> AsyncGenerator[str, None]:
@@ -296,8 +269,7 @@ class AnthropicClientAdapter(APIClientAdapter):
                         if "credit balance is too low" in error_message:
                             raise LLMAPIError(f"Anthropic API request failed: Insufficient credits. {error_message}")
                 except json.JSONDecodeError as json_err:
-                    log(logger, "ERROR", f"Failed to parse error response as JSON: {json_err}")
-                    log(logger, "DEBUG", f"Raw error response: {e.message}")
+                    pass
             raise LLMAPIError(f"Anthropic API request failed: {e}")
         except Exception as e:
             raise LLMAPIError(f"Anthropic API request failed: {e}")
@@ -355,8 +327,18 @@ class LLM:
     def load_model(self):
         api_provider = self.provider.lower() if self.provider != "google" else "gemini"
         api_key = os.environ.get(f"{api_provider.upper()}_API_KEY")
+        
         if not api_key:
-            raise ValueError(f"API key for {self.provider} not found in environment variables")
+            # Check user-level environment variables
+            try:
+                from dotenv import load_dotenv
+                load_dotenv()  # This loads the .env file from the user's home directory
+                api_key = os.environ.get(f"{api_provider.upper()}_API_KEY")
+            except ImportError:
+                pass  # dotenv is not installed, continue with system-level check
+        
+        if not api_key:            
+            raise ValueError(f"API key ({api_provider.upper()}_API_KEY) for {self.provider} not found in system or user environment variables")
 
         if self.provider == "openai":
             return OpenAIClientAdapter(api_key, self.model)
@@ -368,17 +350,32 @@ class LLM:
             raise ValueError(f"Unsupported model provider: {self.provider}")
 
     def send_input(self, prompt: Prompt, parse_json: bool = False) -> Union[str, Dict[str, Any]]:
-        return asyncio.run(self._send_input_async(prompt, parse_json))
+        formatted_prompt: str = prompt.format()
+        
+        # Check if we're in an event loop
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            # If we're not in an event loop, run the async method and return the result
+            return asyncio.run(self._send_input_async(formatted_prompt, parse_json, prompt.template.output_json_structure))
+
+        # If we are in an event loop, we need to run our coroutine in a separate thread
+        with ThreadPoolExecutor() as pool:
+            future = pool.submit(
+                asyncio.run, 
+                self._send_input_async(formatted_prompt, parse_json, prompt.template.output_json_structure)
+            )
+            return future.result()
 
     def stream_input(self, prompt: Prompt, parse_json: bool = False) -> Generator[Union[str, Dict[str, Any]], None, None]:
         async def async_generator():
-            async for chunk in self.stream_input_async(prompt, parse_json=parse_json):
+            formatted_prompt: str = prompt.format()
+            async for chunk in self.stream_input_async(formatted_prompt, parse_json=parse_json, output_json_structure=prompt.template.output_json_structure):
                 yield chunk
 
         return self._async_to_sync_generator(async_generator())
 
     async def send_input_async(self, prompt: Prompt, parse_json: bool = False) -> Union[str, Dict[str, Any]]:
-        log(logger, "DEBUG", f"Sending input: {prompt}")
         formatted_prompt = prompt.format()
         return await self._send_input_async(formatted_prompt, parse_json, prompt.template.output_json_structure)
 
@@ -394,7 +391,6 @@ class LLM:
                     accumulated_json += chunk
                     try:
                         parsed_json = json.loads(accumulated_json)
-                        log(logger, "DEBUG", f"Parsed JSON: {parsed_json}")
                         yield self._extract_fields(parsed_json, prompt.template.output_json_structure)
                         accumulated_json = ""  # Reset after successful parse
                     except json.JSONDecodeError:
@@ -404,13 +400,10 @@ class LLM:
                     yield chunk
 
         except aiohttp.ClientError as e:
-            log(logger, "ERROR", f"Network error: {str(e)}")
             raise LLMNetworkError(f"Network error occurred while streaming from LLM: {str(e)}")
         except json.JSONDecodeError as e:
-            log(logger, "ERROR", f"JSON parse error: {str(e)}")
             raise LLMJSONParseError(f"Failed to parse JSON from LLM response: {str(e)}")
         except Exception as e:
-            log(logger, "ERROR", f"Unexpected error: {str(e)}")
             raise LLMAPIError(f"Unexpected error occurred while streaming from LLM: {str(e)}")
 
     async def send_input_with_history(self, prompt: Prompt, history: List[ConversationTurn], parse_json: bool = False) -> Union[str, Dict[str, Any]]:
@@ -422,81 +415,114 @@ class LLM:
         conversation = "\n".join([f"{turn.role}: {turn.content}" for turn in history])
         return f"{conversation}\n\nHuman: {current_prompt}\nAI:"
 
-    async def send_input_with_memory(self, prompt: Prompt, parse_json: bool = False) -> Union[str, Dict[str, Any]]:
-        try:
-            formatted_prompt = prompt.format()
-            log(logger, "INFO", f"Formatted prompt: {formatted_prompt[:50]}...")  # Log first 50 chars
-            
-            try:
-                relevant_memories = await self.memory_manager.get_relevant_memories(formatted_prompt)
-                log(logger, "INFO", f"Retrieved {len(relevant_memories)} relevant memories")
-            except Exception as e:
-                log(logger, "ERROR", f"Error retrieving relevant memories: {str(e)}")
-                relevant_memories = []
-            
-            memory_context = "\n".join([f"Memory: {mem['content'][:30]}..." for mem in relevant_memories])  # Truncate each memory
-            full_prompt = f"{memory_context}\n\nHuman: {formatted_prompt}\nAI:"
-            log(logger, "INFO", f"Full prompt length: {len(full_prompt)} characters")
-            log(logger, "INFO", f"Full prompt: {full_prompt}")
-            
-            try:
-                response = await self._send_input_async(full_prompt, parse_json, prompt.template.output_json_structure)
-                log(logger, "DEBUG", f"Received response of type: {type(response).__name__}")
-            except Exception as e:
-                log(logger, "ERROR", f"Error sending input to LLM: {str(e)}")
-                raise
+    @lru_cache(maxsize=1)
+    def _get_fast_llm(self):
+        fast_config = LLMConfig(temperature=0.3, max_tokens=100, json_response=True)
+        return LLM("openai", "gpt-4o-mini", config=fast_config)
 
-            try:
-                vector = await self.embeddings.embed_async(formatted_prompt)
-            except Exception as e:
-                log(logger, "ERROR", f"Error embedding prompt: {str(e)}")
-                vector = None
-            
-            try:
-                # Add the new interaction to memory
-                await self.memory_manager.add_memory({
-                    "content": formatted_prompt,
-                    "response": str(response)[:50] + "...",
-                    "vector": vector or formatted_prompt
-                })
-                log(logger, "DEBUG", "Added new interaction to memory")
-            except Exception as e:
-                log(logger, "ERROR", f"Error adding interaction to memory: {str(e)}")
-            
-            return response
+    async def _format_memory_for_storage(self, prompt: str, response: str) -> str:
+        fast_llm = self._get_fast_llm()
+        format_prompt = PromptTemplate(
+            template="""
+Analyze this human-AI interaction to extract comprehensive memories for future use.
+----------------------------------------
+Human: {{prompt}}
+----------------------------------------
+AI: {{response}}
+----------------------------------------
+
+Create a detailed, reusable memory capturing all relevant information from the interaction. Do not omit any significant details. The memory should be thorough enough to provide a complete understanding of the interaction when reviewed later.
+            """,
+            required_params={"prompt": str, "response": str},
+            output_json_structure={"memory": str}
+        )
+        result = await fast_llm.send_input_async(format_prompt.create_prompt(prompt=prompt, response=response), parse_json=True)
+        if isinstance(result, dict):
+            return result["memory"]
+        else:
+            return result
+
+    async def send_input_with_memory(self, prompt: Prompt, parse_json: bool = False) -> Union[str, Dict[str, Any]]:
+        formatted_prompt = prompt.format()
+
+        # Convert the prompt to a vector using embeddings
+        prompt_vector = None
+        try:
+            prompt_vector = await self.embeddings.embed_async(formatted_prompt)
         except Exception as e:
-            log(logger, "ERROR", f"Unexpected error in send_input_with_memory: {str(e)}")
+            print(f"Error creating embedding for prompt: {e}")
+
+        # Use the vector to get relevant memories
+        relevant_memories = []
+        if prompt_vector is not None:
+            try:
+                relevant_memories = await self.memory_manager.get_relevant_memories(prompt_vector, k=3)
+            except Exception as e:
+                print(f"Error retrieving relevant memories: {e}")
+
+        memory_context = "\n".join([f"Memory (score: {mem.score:.2f}): {mem.content}" for mem in relevant_memories])
+        full_prompt = f"""Relevant Memories:
+{memory_context}
+
+Use the above memories as a starting point, but also incorporate your own knowledge and understanding to provide a comprehensive response.
+
+Prompt: {formatted_prompt}
+
+Response:"""
+
+        try:
+            response = await self._send_input_async(full_prompt, parse_json, prompt.template.output_json_structure)
+        except Exception as e:
+            print(f"Error sending input async: {e}")
             raise
 
+        # Format the memory using a fast LLM
+        try:
+            formatted_memory = await self._format_memory_for_storage(formatted_prompt, response['response'])
+        except Exception as e:
+            print(f"Error formatting memory for storage: {e}")
+            return response
+
+        vector = None
+        try:
+            vector = await self.embeddings.embed_async(formatted_memory)
+        except Exception as e:
+            print(f"Error creating embedding for formatted memory: {e}")
+
+        if vector is not None:
+            try:
+                # Add the new interaction to memory only if we have a valid vector
+                await self.memory_manager.add_memory({
+                    "content": formatted_memory,
+                    "vector": vector
+                })
+            except Exception as e:
+                print(f"Error adding memory: {e}")
+
+        return response
+
     async def _send_input_async(self, formatted_prompt: str, parse_json: bool, output_json_structure: Dict[str, Any] = None) -> Union[str, Dict[str, Any]]:
-        log(logger, "DEBUG", f"Sending input to {self.provider} {self.model}")
         self._configure_json_mode(output_json_structure is not None)
 
         try:
-            log(logger, "DEBUG", f"Prompt: {formatted_prompt}")
             response = await self.client.send_prompt(formatted_prompt, self.config)
-            log(logger, "DEBUG", f"Raw response: {response}")
-
             if parse_json:
-                parsed_response = self._parse_json_response(response, output_json_structure)
-                log(logger, "DEBUG", f"Parsed response: {parsed_response}")
-                return parsed_response
+                try:
+                    parsed_response = await self._parse_json_response(response, output_json_structure)
+                    if not isinstance(parsed_response, dict):
+                        raise LLMJSONParseError("LLM did not return a valid JSON object")
+                    return parsed_response
+                except json.JSONDecodeError as e:
+                    raise LLMJSONParseError(f"Failed to parse JSON from the LLM response: {str(e)}")
             return response
-        except json.JSONDecodeError as e:
-            log(logger, "ERROR", f"JSON parse error: {str(e)}")
-            raise LLMJSONParseError(f"Failed to parse JSON from the LLM response: {str(e)}")
         except LLMJSONParseError as e:
-            log(logger, "ERROR", str(e))
             raise
         except aiohttp.ClientError as e:
-            log(logger, "ERROR", f"Network error: {str(e)}")
             raise LLMNetworkError(f"Network error occurred while sending prompt to LLM: {str(e)}")
         except Exception as e:
-            log(logger, "ERROR", f"Unexpected error: {str(e)}")
             raise LLMAPIError(f"Unexpected error occurred while sending prompt to LLM: {str(e)}")
 
-    def _parse_json_response(self, response: str, expected_structure: Dict[str, Any]) -> Dict[str, Any]:
-        log(logger, "DEBUG", f"Parsing JSON response: {response}")
+    async def _parse_json_response(self, response: str, expected_structure: Dict[str, Any]) -> Dict[str, Any]:
         try:
             parsed_json = json.loads(response)
         except json.JSONDecodeError:
@@ -505,32 +531,36 @@ class LLM:
             if json_match:
                 try:
                     parsed_json = json.loads(json_match.group(1))
-                    log(logger, "DEBUG", f"Parsed JSON: {parsed_json}")
+                    return self._extract_fields(parsed_json, expected_structure)
                 except json.JSONDecodeError:
-                    log(logger, "ERROR", "Failed to parse JSON from the LLM response")
-                    raise LLMJSONParseError("Failed to parse JSON from the LLM response")
-            else:
-                log(logger, "ERROR", "Failed to parse JSON from the LLM response")
-                raise LLMJSONParseError("Failed to parse JSON from the LLM response")
+                    pass
+
+            llm_prompt = (
+                "Extract and return only the JSON object from the following text. "
+                "Ensure the output is valid JSON without any additional text.\n\n"
+                f"Text: \"{response}\""
+            )
+
+            try:
+                extracted_json = await self.client.send_prompt(llm_prompt, self.config)
+                return extracted_json
+            except Exception as e:
+                raise LLMJSONParseError("Failed to extract JSON from the LLM response using LLM")
 
         return self._extract_fields(parsed_json, expected_structure)
 
     def _extract_fields(self, parsed_json: Dict[str, Any], expected_structure: Dict[str, Any]) -> Dict[str, Any]:
-        log(logger, "DEBUG", f"Extracting fields: {expected_structure}")
         result = {}
         for key, expected_type in expected_structure.items():
             if key not in parsed_json:
-                log(logger, "ERROR", f"Missing expected field: {key}")
                 raise LLMJSONParseError(f"Missing expected field: {key}")
             
             value = parsed_json[key]
-            log(logger, "DEBUG", f"Value: {value}")
             if isinstance(expected_type, str):
                 result[key] = self._validate_type(value, expected_type, key)
             elif hasattr(expected_type, '__origin__') and expected_type.__origin__ is Union:
                 valid_types = [t for t in expected_type.__args__ if not isinstance(t, type(typing.Any))]
                 if not any(self._is_valid_type(value, t) for t in valid_types):
-                    log(logger, "ERROR", f"Field {key} should be one of {valid_types}")
                     raise LLMJSONParseError(f"Field {key} should be one of {valid_types}")
                 result[key] = value
             else:
@@ -551,39 +581,32 @@ class LLM:
     ) -> Any:
         if isinstance(expected_type, dict):
             if not isinstance(value, dict):
-                log(logger, "ERROR", f"Field {field_name} should be a dictionary")
                 raise LLMJSONParseError(f"Field {field_name} should be a dictionary")
             return self._extract_fields(value, expected_type)
 
         if isinstance(expected_type, str):
             if expected_type == 'int':
                 if not isinstance(value, (int, float)):
-                    log(logger, "ERROR", f"Field {field_name} should be an integer or float")
                     raise LLMJSONParseError(f"Field {field_name} should be an integer or float")
                 return int(value)
             elif expected_type == 'float':
                 if not isinstance(value, (int, float)):
-                    log(logger, "ERROR", f"Field {field_name} should be a float")
                     raise LLMJSONParseError(f"Field {field_name} should be a float")
                 return float(value)
             elif expected_type == 'str':
                 if not isinstance(value, str):
-                    log(logger, "ERROR", f"Field {field_name} should be a string")
                     raise LLMJSONParseError(f"Field {field_name} should be a string")
                 return value
             elif expected_type == 'bool':
                 if not isinstance(value, bool):
-                    log(logger, "ERROR", f"Field {field_name} should be a boolean")
                     raise LLMJSONParseError(f"Field {field_name} should be a boolean")
                 return value
             elif expected_type.startswith('dict['):
                 if not isinstance(value, dict):
-                    log(logger, "ERROR", f"Field {field_name} should be a dictionary")
                     raise LLMJSONParseError(f"Field {field_name} should be a dictionary")
                 return value
             elif expected_type.startswith('list['):
                 if not isinstance(value, list):
-                    log(logger, "ERROR", f"Field {field_name} should be a list")
                     raise LLMJSONParseError(f"Field {field_name} should be a list")
                 return value
             elif expected_type.startswith('Union['):
@@ -594,15 +617,12 @@ class LLM:
                         return self._validate_type(value, union_type.strip(), field_name)
                     except LLMJSONParseError:
                         continue
-                log(logger, "ERROR", f"Field {field_name} does not match any type in {expected_type}")
                 raise LLMJSONParseError(f"Field {field_name} does not match any type in {expected_type}")
             else:
-                log(logger, "ERROR", f"Unsupported type for field {field_name}: {expected_type}")
                 raise LLMJSONParseError(f"Unsupported type for field {field_name}: {expected_type}")
 
         elif isinstance(expected_type, type):
             if not isinstance(value, expected_type):
-                log(logger, "ERROR", f"Field {field_name} should be of type {expected_type.__name__}")
                 raise LLMJSONParseError(f"Field {field_name} should be of type {expected_type.__name__}")
             return value
 
@@ -613,11 +633,9 @@ class LLM:
                     return self._validate_type(value, union_type, field_name)
                 except LLMJSONParseError:
                     continue
-            log(logger, "ERROR", f"Field {field_name} does not match any type in {expected_type}")
             raise LLMJSONParseError(f"Field {field_name} does not match any type in {expected_type}")
 
         else:
-            log(logger, "ERROR", f"Unsupported type for field {field_name}: {expected_type}")
             raise LLMJSONParseError(f"Unsupported type for field {field_name}: {expected_type}")
         
     def _configure_json_mode(self, json_response: bool):
@@ -636,7 +654,6 @@ class LLM:
             if hasattr(self.config, key):
                 setattr(self.config, key, value)
             else:
-                log(logger, "ERROR", f"Invalid configuration option: {key}")
                 raise ValueError(f"Invalid configuration option: {key}")
 
     @staticmethod

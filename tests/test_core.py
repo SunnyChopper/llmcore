@@ -66,7 +66,8 @@ def test_llm_initialization(llm_openai, llm_anthropic, llm_google):
     assert llm_google.config.max_tokens == 200
 
 def test_llm_initialization_invalid_provider(mock_env_vars):
-    with pytest.raises(ValueError, match="API key for invalid_provider not found in environment variables"):
+    import re
+    with pytest.raises(ValueError, match=re.escape("API key (INVALID_PROVIDER_API_KEY) for invalid_provider not found in system or user environment variables")):
         LLM('invalid_provider', 'model')
 
 @pytest.mark.asyncio
@@ -166,7 +167,7 @@ async def test_parse_json_response_invalid(llm_openai):
     prompt = Prompt(PromptTemplate("Test prompt", required_params={}, output_json_structure={"key": str}))
     llm_openai.client.send_prompt = AsyncMock(return_value='Invalid JSON')
     
-    with pytest.raises(LLMJSONParseError, match="Failed to parse JSON from the LLM response"):
+    with pytest.raises(LLMJSONParseError, match="LLM did not return a valid JSON object"):
         await llm_openai.send_input_async(prompt, parse_json=True)
 
 @pytest.mark.asyncio

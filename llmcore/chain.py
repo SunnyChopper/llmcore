@@ -1,13 +1,12 @@
-import asyncio
-import logging
-import re
+# System imports
 from typing import List, Dict, Any, Optional, Union, get_origin, get_args, Iterator, AsyncIterator
+import asyncio
 import json
+import re
+
+# LLMCore imports
 from llmcore.core import LLM, LLMConfig
 from llmcore.prompt import PromptTemplate
-from llmcore.logger import setup_logger, log
-
-logger = setup_logger(__name__)
 
 class LLMChainError(Exception):
     pass
@@ -24,7 +23,6 @@ class LLMChain:
         self.default_llm = default_llm
         self.steps = steps
         self.context = {}
-        self.logger = logging.getLogger(__name__)
         self.use_memory = use_memory
 
     def execute(self, initial_input: Dict[str, Any]) -> Dict[str, Any]:
@@ -32,28 +30,20 @@ class LLMChain:
 
     async def execute_async(self, initial_input: Dict[str, Any]) -> Dict[str, Any]:
         self.context = initial_input.copy()
-        log(logger, "INFO", f"Starting LLMChain execution with {len(self.steps)} steps")
 
         for i, step in enumerate(self.steps):
-            log(logger, "INFO", f"Executing step {i+1}: {step.output_key}")
             try:
-                log(logger, "INFO", f"Validating input for step {i+1}")
                 self._validate_input(step, self.context)
             except Exception as e:
-                log(logger, "ERROR", f"Input validation failed for step {i+1}: {str(e)}")
                 raise LLMChainError(f"Input validation failed for step {i+1}: {str(e)}")
 
             try:
-                log(logger, "INFO", f"Creating prompt for step {i+1}")
                 prompt_context = {
                     **self.context,
                     "previous_steps": {k: v for k, v in self.context.items() if k not in initial_input}
                 }
-                log(logger, "INFO", f"Prompt context: {prompt_context}")
                 prompt = step.prompt_template.create_prompt(**prompt_context)
-                log(logger, "INFO", f"Prompt: {prompt.format()}")
             except Exception as e:
-                log(logger, "ERROR", f"Prompt creation failed for step {i+1}: {str(e)}")
                 raise LLMChainError(f"Prompt creation failed for step {i+1}: {str(e)}")
 
             parse_json = step.prompt_template.output_json_structure is not None
@@ -65,18 +55,13 @@ class LLMChain:
                 else:
                     response = await llm_to_use.send_input_async(prompt, parse_json=parse_json)
             except Exception as e:
-                log(logger, "ERROR", f"LLM request failed for step {i+1}: {str(e)}")
                 raise LLMChainError(f"LLM request failed for step {i+1}: {str(e)}")
 
             try:
-                log(logger, "DEBUG", f"Received response from LLM: {response}")
                 self.context[step.output_key] = response
-                log(logger, "INFO", f"Step {i+1} completed successfully")
             except Exception as e:
-                log(logger, "ERROR", f"Error processing LLM response for step {i+1}: {str(e)}")
                 raise LLMChainError(f"Error processing LLM response for step {i+1}: {str(e)}")
 
-        log(logger, "INFO", "LLMChain execution completed successfully")
         return self.context
     
     def stream(self, initial_input: Dict[str, Any]) -> Iterator[Dict[str, Any]]:
@@ -84,53 +69,34 @@ class LLMChain:
 
     async def stream_async(self, initial_input: Dict[str, Any]) -> AsyncIterator[Dict[str, Any]]:
         self.context = initial_input.copy()
-        log(logger, "INFO", f"Starting LLMChain streaming execution with {len(self.steps)} steps")
 
         for i, step in enumerate(self.steps):
-            log(logger, "INFO", f"Executing step {i+1}: {step.output_key}")
             try:
                 self._validate_input(step, self.context)
-                
+
                 prompt_context = {
                     **self.context,
                     "previous_steps": {k: v for k, v in self.context.items() if k not in initial_input}
                 }
-                
+
                 prompt = step.prompt_template.create_prompt(**prompt_context)
                 parse_json = step.prompt_template.output_json_structure is not None
                 llm_to_use = step.llm or self.default_llm
-                
-                log(logger, "DEBUG", f"Sending prompt to LLM: {prompt}")
-                
+
                 full_response = ""
                 async for chunk in llm_to_use.stream_input_async(prompt, parse_json=parse_json):
                     if isinstance(chunk, dict):
-                        yield {step.output_key: chunk}
+                        # Extract the relevant value from the chunk based on the output_key
+                        extracted_value = chunk.get(step.output_key)
+                        yield {step.output_key: extracted_value}
                     else:
                         full_response += chunk
-                
+
                 extracted_json = await self._extract_json(full_response)
-                if isinstance(extracted_json, dict):
-                    log(logger, "DEBUG", "Extracted JSON:")
-                    log(logger, "DEBUG", extracted_json)
-                elif isinstance(extracted_json, str):
-                    log(logger, "DEBUG", "Original string:")
-                    log(logger, "DEBUG", full_response)
-                    log(logger, "DEBUG", type(full_response))
-                    log(logger, "DEBUG", "\n\n")
-                    log(logger, "DEBUG", "Extracted JSON string:")
-                    log(logger, "DEBUG", extracted_json)
-                    log(logger, "DEBUG", type(extracted_json))
-                else:
-                    log(logger, "DEBUG", f"Extracted JSON type: {type(extracted_json)}")
                 self.context[step.output_key] = extracted_json
-                log(logger, "DEBUG", f"Context: {self.context}")
-                log(logger, "INFO", f"Step {i+1} completed successfully")
             except Exception as e:
-                log(logger, "ERROR", f"Error in step {i+1}: {str(e)}")
                 raise LLMChainError(f"Error in step {i+1}: {str(e)}")
 
-        log(logger, "INFO", "LLMChain streaming execution completed successfully")
         yield self.context
 
     async def _extract_json(self, text: Union[str, Dict[str, Any]]) -> Union[Dict[str, Any], str]:
@@ -189,15 +155,12 @@ class LLMChain:
             required_params={"text": str},
             output_json_structure={"extracted_json": Union[Dict[str, Any], List[Any]]}
         )
-        log(logger, "DEBUG", f"Extracting JSON with LLM: {text}")
         result = await fast_llm.send_input_async(prompt.create_prompt(text=text), parse_json=True)
-        log(logger, "DEBUG", f"Extracted JSON: {result}")
         return result.get("extracted_json", {})
 
     def _validate_input(self, step, context):
         for param, param_type in step.required_params.items():
             if param not in context:
-                log(logger, "ERROR", f"Missing required parameter: {param}")
                 raise ValueError(f"Missing required parameter: {param}")
 
             # Fixed: Use 'is not Any' to avoid isinstance() with Any
@@ -217,7 +180,11 @@ class LLMChain:
                         raise TypeError(f"Parameter {param} should be a dict")
                     if get_args(param_type):
                         key_type, value_type = get_args(param_type)
-                        if not all(isinstance(k, key_type) and isinstance(v, value_type) for k, v in value.items()):
+                        if key_type is str and value_type is Any:
+                            # Special case for Dict[str, Any]
+                            if not all(isinstance(k, str) for k in value.keys()):
+                                raise TypeError(f"All keys in {param} should be of type str")
+                        elif not all(isinstance(k, key_type) and (value_type is Any or isinstance(v, value_type)) for k, v in value.items()):
                             raise TypeError(f"All items in {param} should be of type {key_type}: {value_type}")
                 elif origin_type is None:
                     # Handle cases where origin_type could not be determined

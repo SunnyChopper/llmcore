@@ -2,6 +2,10 @@
 
 LLMCore is a powerful Python library for working with Large Language Models (LLMs). It provides a flexible and extensible interface for interacting with various LLM providers and building complex workflows.
 
+This library was created to make working with LLMs easier and more intuitive. It helps users focus on building their AI applications without getting overwhelmed by the different complexities of various LLM providers. By simplifying the development process, users can move faster and find the right product-market fit more efficiently. 
+
+The personal motivation for building this comes from painful experiences setting up and working with LLMs in the past, making it difficult to get started and ship products at the speed I wanted.
+
 ## Features
 
 - **Multiple LLM Providers**: Support for OpenAI, Anthropic, and Google (Gemini).
@@ -12,7 +16,6 @@ LLMCore is a powerful Python library for working with Large Language Models (LLM
 - **Configurable LLM Parameters**: Customize temperature, max tokens, top-p, and more.
 - **Memory Management**: Maintain conversational context across interactions.
 - **Embeddings for Semantic Searches and Codebase Analysis**: Enhance search and analysis capabilities.
-- **Comprehensive Logging**: Colored and leveled logging for better debugging and monitoring.
 
 ## Installation
 
@@ -466,7 +469,6 @@ print(f"Sentiment: {result['sentiment']}")
 Utility functions used across the library.
 
 ```python
-import numpy as np
 from typing import List
 
 def cosine_similarity(v1: List[float], v2: List[float]) -> float:
@@ -657,49 +659,6 @@ Handles prompt templating with placeholders and input validation.
               formatted_prompt += f"{json_instruction}\n```json\n{json_structure}\n```"
           
           return formatted_prompt
-  ```
-
-### `llmcore/logger.py`
-
-Sets up and manages logging throughout the library.
-
-- **ColorFormatter**
-
-  Custom formatter to add colors to log messages based on severity level.
-
-  ```python
-  class ColorFormatter(logging.Formatter):
-      COLORS = {
-          'DEBUG': '\033[94m',  # Blue
-          'INFO': '\033[92m',   # Green
-          'WARNING': '\033[93m',  # Yellow
-          'ERROR': '\033[91m',  # Red
-          'CRITICAL': '\033[95m',  # Magenta
-          'RESET': '\033[0m'  # Reset color
-      }
-  
-      def format(self, record):
-          log_message = super().format(record)
-          return f"{self.COLORS.get(record.levelname, self.COLORS['RESET'])}{log_message}{self.COLORS['RESET']}"
-  ```
-
-- **setup_logger**
-
-  Sets up a logger with the custom formatter.
-
-  ```python
-  def setup_logger(name: str, level: Union[int, str] = logging.INFO):
-      logger = logging.getLogger(name)
-      logger.setLevel(level)
-  
-      console_handler = logging.StreamHandler(sys.stdout)
-      console_handler.setLevel(level)
-  
-      formatter = ColorFormatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-      console_handler.setFormatter(formatter)
-  
-      logger.addHandler(console_handler)
-      return logger
   ```
 
 **Notes:**
