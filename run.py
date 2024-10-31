@@ -11,8 +11,6 @@ from rich.prompt import Prompt
 from rich.table import Table
 
 from llmcore import LLM, LLMConfig, LLMChainBuilder, PromptTemplate, CodebaseEmbeddings, Embeddings
-from llmcore.tools.knowledge_graph import KnowledgeGraph, Concept, ConceptCategory
-from llmcore.memory import MemoryManager
 
 console = Console()
 
@@ -23,8 +21,6 @@ class AIFinancialAnalysisSystem:
         self.llm_analysis = LLM(provider="anthropic", model="claude-3-5-sonnet-20240620", config=LLMConfig(temperature=0.4, max_tokens=3000))
         self.llm_summary = LLM(provider="openai", model="gpt-4o-mini", config=LLMConfig(temperature=0.6, max_tokens=2000))
         self.llm_relationship = LLM(provider="openai", model="gpt-4o-mini", config=LLMConfig(temperature=0.5, max_tokens=1500))
-        
-        self.knowledge_graph = KnowledgeGraph()
         
         console.print("✨ Initializing knowledge graph and LLM chains")
         
@@ -370,247 +366,6 @@ async def ai_powered_code_review_system():
     review = await review_code_snippet(code_snippet, "python")
     console.print(f"\033📝 Code Review Result: {review}\033")
 
-async def ai_assisted_customer_support():
-    console.print(Panel("AI-Assisted Customer Support System 🤖", title="Program 2"))
-    
-    llm = LLM(provider="anthropic", model="claude-3-5-sonnet-20240620", config=LLMConfig(temperature=0.7, max_tokens=2000))
-    knowledge_graph = KnowledgeGraph()
-    
-    # Initialize knowledge graph with more detailed product information
-    console.print("🧠 Initializing knowledge graph with product information")
-    concept_ids = {}
-
-    # Add concepts with initial relationships
-    concept_ids["SmartHome Hub"] = await knowledge_graph.add_concept(
-        name="SmartHome Hub",
-        description="Central device for controlling smart home devices. Features include: "
-                    "Wi-Fi and Bluetooth connectivity, voice control integration, "
-                    "compatibility with major smart home protocols.",
-        category=ConceptCategory.TECHNOLOGY,
-        sources=[{"url": "https://example.com/smarthome-hub", "credibility": 0.95}],
-        tags=["smart home", "hub", "central device"],
-        significance=0.9,
-        initial_relationships=[]  # No initial relationships
-    )
-
-    concept_ids["Mobile App"] = await knowledge_graph.add_concept(
-        name="Mobile App",
-        description="Companion app for controlling SmartHome Hub. Available on iOS and Android. "
-                    "Features include: device management, automation creation, energy monitoring.",
-        category=ConceptCategory.TECHNOLOGY,
-        sources=[{"url": "https://example.com/mobile-app", "credibility": 0.9}],
-        tags=["app", "mobile", "control"],
-        significance=0.85,
-        initial_relationships=[
-            {
-                'target_id': concept_ids["SmartHome Hub"],
-                'rel_type': "controls",
-                'strength': 0.9
-            }
-        ]
-    )
-    
-    concept_ids["Hub-App Connection"] = await knowledge_graph.add_concept(
-        name="Hub-App Connection",
-        description="Process of linking the SmartHome Hub to the mobile app. Requires both devices "
-                    "to be on the same Wi-Fi network. Uses QR code scanning for secure pairing.",
-        category=ConceptCategory.TECHNOLOGY,
-        sources=[{"url": "https://example.com/hub-app-connection", "credibility": 0.85}],
-        tags=["connection", "pairing", "setup"],
-        significance=0.8,
-        initial_relationships=[
-            {
-                'target_id': concept_ids["SmartHome Hub"],
-                'rel_type': "enables",
-                'strength': 0.8
-            },
-            {
-                'target_id': concept_ids["Mobile App"],
-                'rel_type': "facilitates",
-                'strength': 0.7
-            }
-        ]
-    )
-    
-    # Display a summary of the updated knowledge graph
-    console.print("\n📚 Updated Knowledge Graph Summary:")
-    concepts = knowledge_graph.get_all_concepts()
-    kg_table = Table(title="Knowledge Graph Concepts")
-    kg_table.add_column("Concept", style="cyan")
-    kg_table.add_column("Description", style="magenta")
-    kg_table.add_column("Category", style="magenta")
-    kg_table.add_column("Tags", style="green")
-    kg_table.add_column("Significance", style="green")
-    for concept in concepts:
-        tags = ", ".join(concept.tags)
-        kg_table.add_row(concept.name, concept.description, concept.category.value, tags, f"{concept.significance:.2f}")
-    console.print(kg_table)
-    
-    # Display a summary of the relationships in the knowledge graph
-    console.print("\n🔗 Knowledge Graph Relationships:")
-    relationships = knowledge_graph.get_all_relationships()
-    rel_table = Table(title="Knowledge Graph Relationships")
-    rel_table.add_column("Source", style="cyan")
-    rel_table.add_column("Target", style="magenta")
-    rel_table.add_column("Type", style="green")
-    rel_table.add_column("Strength", style="green")
-    for rel in relationships:
-        rel_table.add_row(rel["source"], rel["target"], rel["type"], f"{rel['strength']:.2f}")
-    console.print(rel_table)
-    
-    # Create a more comprehensive prompt template for customer support
-    support_template = PromptTemplate(
-        "You are an AI customer support agent for a smart home company. "
-        "Use the following product information to answer the customer's question:\n\n"
-        "{{product_info}}\n\n"
-        "Customer question: {{question}}\n\n"
-        "Provide a helpful, accurate, and detailed response. Include step-by-step instructions if applicable. "
-        "Also, suggest related topics or features that might be of interest to the customer.",
-        required_params={"product_info": str, "question": str},
-        output_json_structure={
-            "response": str,
-            "confidence": float,
-            "follow_up_questions": List[str],
-            "related_topics": List[str]
-        }
-    )
-    
-    async def handle_customer_query(question: str):
-        # Query the knowledge graph for relevant concepts
-        relevant_concepts = await knowledge_graph.query_graph(question)
-        
-        # Get related concepts to provide more context
-        related_concepts = []
-        for concept in relevant_concepts:
-            related = await knowledge_graph.get_related_concepts(concept['id'])
-            related_concepts.extend(related)
-        
-        # Combine all relevant information
-        product_info = "\n\n".join([
-            f"Concept: {concept['name']}\nDescription: {concept['description']}\nSignificance: {concept['significance']}"
-            for concept in relevant_concepts + related_concepts
-        ])
-        
-        prompt = support_template.create_prompt(
-            product_info=product_info,
-            question=question
-        )
-        
-        response = await llm.send_input_async(prompt, parse_json=True)
-        return response
-    
-    # Example usage with multiple questions
-    questions = [
-        "How do I connect my SmartHome Hub to my mobile app?",
-        "Can I control my smart lights using voice commands?",
-        "What should I do if my hub is not detecting new devices?"
-    ]
-    
-    for question in questions:
-        console.print(f"\n🤔 Customer Question: {question}")
-        answer = await handle_customer_query(question)
-        
-        # Display the response in a structured format
-        console.print(Panel(answer["response"], title="📩 Customer Support Response", expand=False))
-        console.print(f"Confidence: {answer['confidence']:.2f}")
-        
-        if answer["follow_up_questions"]:
-            console.print("Follow-up Questions:")
-            for q in answer["follow_up_questions"]:
-                console.print(f"  • {q}")
-        
-        if answer["related_topics"]:
-            console.print("Related Topics:")
-            for topic in answer["related_topics"]:
-                console.print(f"  • {topic}")
-        
-        # Update knowledge graph based on the interaction
-        category_list_string = "\n".join([category.value for category in ConceptCategory])
-        knowledge_analysis_template = PromptTemplate("""Analyze the following customer support interaction for new, valuable knowledge to add to our knowledge graph:
-Question: {{question}}
-Response: {{response}}
-
-If there's significant new information, provide the following in JSON format:
-1. A concise name for the concept (max 50 characters)
-2. A brief description of the new knowledge
-3. The category it belongs to from the following options:
-{{category_list}}
-4. A significance score (0.0 to 1.0) based on the importance of the information
-5. Relevant tags for the concept
-
-IMPORTANT: If there's no significant new information, return empty strings, 0.0 for significance, and an empty list for tags.""",
-            required_params={"question": str, "response": str},
-            output_json_structure={
-                "name": str,
-                "description": str,
-                "category": str,
-                "significance": float,
-                "tags": List[str]
-            }
-        )
-    
-        knowledge_analysis_prompt = knowledge_analysis_template.create_prompt(
-            question=question,
-            response=answer["response"],
-            category_list=category_list_string
-        )
-    
-        # Use a faster, smaller model for this analysis to keep the process quick
-        knowledge_analysis_llm = LLM(provider="openai", model="gpt-4o-mini", config=LLMConfig(temperature=0.4, max_tokens=1024))
-        knowledge_analysis = await knowledge_analysis_llm.send_input_async(knowledge_analysis_prompt, parse_json=True)
-    
-        if knowledge_analysis and knowledge_analysis.get("name"):
-            # Add the new concept
-            new_concept_id = await knowledge_graph.add_concept(
-                name=knowledge_analysis["name"],
-                description=knowledge_analysis["description"],
-                category=knowledge_analysis["category"],
-                sources=[{"url": "AI-generated from customer interaction", "credibility": 0.8}],
-                tags=knowledge_analysis.get("tags", []),
-                significance=knowledge_analysis.get("significance", 1.0)
-            )
-            console.print(f"[bold green]New knowledge added to graph: {knowledge_analysis['name']}[/bold green]")
-            
-            # Optionally, establish relationships between the new concept and existing concepts
-            # This can be based on predefined rules or additional LLM prompts
-            # For simplicity, we'll create a generic 'related_to' relationship with a random existing concept
-            # Here, we choose 'SmartHome Hub' as an example
-            await knowledge_graph.add_relationship(
-                source_id=new_concept_id,
-                target_id=concept_ids["SmartHome Hub"],
-                rel_type="related_to",
-                strength=0.5
-            )
-            console.print(f"[bold blue]Established 'related_to' relationship between '{knowledge_analysis['name']}' and 'SmartHome Hub'.[/bold blue]")
-        else:
-            console.print("[yellow]No new significant knowledge to add to the graph.[/yellow]")
-    
-    # Display a summary of the updated knowledge graph
-    console.print("\n📚 Updated Knowledge Graph Summary:")
-    concepts = knowledge_graph.get_all_concepts()
-    kg_table = Table(title="Knowledge Graph Concepts")
-    kg_table.add_column("Concept", style="cyan")
-    kg_table.add_column("Description", style="magenta")
-    kg_table.add_column("Category", style="magenta")
-    kg_table.add_column("Tags", style="green")
-    kg_table.add_column("Significance", style="green")
-    for concept in concepts:
-        tags = ", ".join(concept.tags)
-        kg_table.add_row(concept.name, concept.description, concept.category.value, tags, f"{concept.significance:.2f}")
-    console.print(kg_table)
-
-    # Display a summary of the relationships in the knowledge graph
-    console.print("\n🔗 Knowledge Graph Relationships:")
-    relationships = knowledge_graph.get_all_relationships()
-    rel_table = Table(title="Knowledge Graph Relationships")
-    rel_table.add_column("Source", style="cyan")
-    rel_table.add_column("Target", style="magenta")
-    rel_table.add_column("Type", style="green")
-    rel_table.add_column("Strength", style="green")
-    for rel in relationships:
-        rel_table.add_row(rel["source"], rel["target"], rel["type"], f"{rel['strength']:.2f}")
-    console.print(rel_table)
-
 async def ai_driven_content_marketing_platform():
     console.print(Panel("AI-Driven Content Marketing Platform 📰", title="Program 3"))
     
@@ -860,7 +615,7 @@ async def context_aware_conversation():
     
     # Simulate a conversation that builds upon previous information
     questions = [
-        "Let's create a fictional character named Alex. What's their profession?",
+        "Let's create a fictional character named Alex. What's their profession? Just make one up.",
         "Given Alex's profession, what might be their biggest challenge at work?",
         "How does Alex's work challenge affect their personal life?",
         "What hobby might Alex take up to cope with their stress?",
@@ -952,13 +707,12 @@ async def multi_step_analysis():
 async def main():
     programs = {
         "1": ("AI-Powered Code Review System", ai_powered_code_review_system),
-        "2": ("AI-Assisted Customer Support", ai_assisted_customer_support),
-        "3": ("AI-Driven Content Marketing Platform", ai_driven_content_marketing_platform),
-        "4": ("AI-Powered Financial Analysis System", ai_powered_financial_analysis),
-        "5": ("Streaming LLM Response", stream_llm_response),
-        "6": ("Code Similarity Search", code_similarity_search),
-        "7": ("Context-Aware Conversation", context_aware_conversation),
-        "8": ("Multi-Step Analysis", multi_step_analysis),
+        "2": ("AI-Driven Content Marketing Platform", ai_driven_content_marketing_platform),
+        "3": ("AI-Powered Financial Analysis System", ai_powered_financial_analysis),
+        "4": ("Streaming LLM Response", stream_llm_response),
+        "5": ("Code Similarity Search", code_similarity_search),
+        "6": ("Context-Aware Conversation", context_aware_conversation),
+        "7": ("Multi-Step Analysis", multi_step_analysis),
     }
 
     while True:

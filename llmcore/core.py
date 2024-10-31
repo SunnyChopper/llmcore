@@ -417,30 +417,59 @@ class LLM:
 
     @lru_cache(maxsize=1)
     def _get_fast_llm(self):
-        fast_config = LLMConfig(temperature=0.3, max_tokens=100, json_response=True)
+        fast_config = LLMConfig(temperature=0.3, max_tokens=100, json_response=True, response_format={"type": "json_object"})
         return LLM("openai", "gpt-4o-mini", config=fast_config)
 
     async def _format_memory_for_storage(self, prompt: str, response: str) -> str:
         fast_llm = self._get_fast_llm()
         format_prompt = PromptTemplate(
             template="""
-Analyze this human-AI interaction to extract comprehensive memories for future use.
-----------------------------------------
-Human: {{prompt}}
-----------------------------------------
-AI: {{response}}
-----------------------------------------
+    Please analyze this human-AI interaction and create a concise memory summary.
+    Format your response as a JSON object with a single "memory" key containing the summary as a string.
 
-Create a detailed, reusable memory capturing all relevant information from the interaction. Do not omit any significant details. The memory should be thorough enough to provide a complete understanding of the interaction when reviewed later.
-            """,
+    Human Prompt: {{prompt}}
+
+    AI Response: {{response}}
+
+    Instructions:
+    1. Extract the key information and context from both the prompt and response
+    2. Create a clear, detailed summary that captures the essential elements
+    3. Ensure the summary would be useful for future reference
+    4. Return ONLY a JSON object with a "memory" key containing your summary
+
+    Example format:
+    {
+        "memory": "User asked about X topic, received explanation about Y and Z concepts..."
+    }
+    """,
             required_params={"prompt": str, "response": str},
             output_json_structure={"memory": str}
         )
-        result = await fast_llm.send_input_async(format_prompt.create_prompt(prompt=prompt, response=response), parse_json=True)
-        if isinstance(result, dict):
-            return result["memory"]
-        else:
-            return result
+
+        try:
+            formatted_prompt = format_prompt.create_prompt(prompt=prompt, response=response)
+            result = await fast_llm.send_input_async(formatted_prompt, parse_json=True)
+            
+            if isinstance(result, dict) and "memory" in result:
+                return result["memory"]
+            elif isinstance(result, str):
+                try:
+                    # Try to parse the string as JSON
+                    parsed = json.loads(result)
+                    if isinstance(parsed, dict) and "memory" in parsed:
+                        return parsed["memory"]
+                except json.JSONDecodeError:
+                    pass
+                # If it's a valid string but not JSON, return it directly
+                return result
+            else:
+                raise LLMJSONParseError("Unexpected response format from memory formatting LLM")
+                
+        except Exception as e:
+            # If anything goes wrong, create a basic memory format
+            fallback_memory = f"Interaction summary - Prompt: {prompt[:100]}... Response: {response[:100]}..."
+            print(f"Warning: Using fallback memory format due to error: {str(e)}")
+            return fallback_memory
 
     async def send_input_with_memory(self, prompt: Prompt, parse_json: bool = False) -> Union[str, Dict[str, Any]]:
         formatted_prompt = prompt.format()
@@ -472,13 +501,16 @@ Response:"""
 
         try:
             response = await self._send_input_async(full_prompt, parse_json, prompt.template.output_json_structure)
+
+            # Handle both dictionary and string responses
+            response_content = response['response'] if isinstance(response, dict) else response
         except Exception as e:
             print(f"Error sending input async: {e}")
             raise
 
         # Format the memory using a fast LLM
         try:
-            formatted_memory = await self._format_memory_for_storage(formatted_prompt, response['response'])
+            formatted_memory = await self._format_memory_for_storage(formatted_prompt, response_content)
         except Exception as e:
             print(f"Error formatting memory for storage: {e}")
             return response

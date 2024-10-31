@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="llmcore",
-    version="0.0.5",
+    version="0.0.6",
     author="Sunny Singh",
     author_email="ishy.singh@gmail.com",
     description="LLMCore: Essential tools for LLM development - models, prompts, embeddings, agents, chains, and more.",

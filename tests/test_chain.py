@@ -494,7 +494,7 @@ async def test_llm_chain_builder_step_with_no_required_params():
     with patch('llmcore.chain.PromptTemplate') as MockPromptTemplate:
         MockPromptTemplate.return_value = prompt_template
         mock_llm = AsyncMock()
-        mock_llm.send_input_async.return_value = {"response": "Hello!"}
+        mock_llm.send_input_async.return_value = {"response": "hello!"}
         
         # Act
         builder.add_step(
@@ -507,7 +507,7 @@ async def test_llm_chain_builder_step_with_no_required_params():
         result = await chain.execute_async({})  # No initial input needed
 
     # Assert
-    assert result == {"response": {"response": "Hello!"}}
+    assert result == {"response": {"response": "hello!"}}
 
 @pytest.mark.asyncio
 async def test_llm_chain_validate_input_dict_with_any_value():

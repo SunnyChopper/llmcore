@@ -23,9 +23,20 @@ class PromptTemplate:
             elif hasattr(item, '__origin__'):  # This handles Union and other generic types
                 origin = item.__origin__
                 args = item.__args__
-                if origin is Union:
+
+                # Handle special cases for common types
+                if origin in (list, List):
+                    return f"list[{', '.join(convert(arg) for arg in args)}]"
+                elif origin in (dict, Dict):
+                    return f"dict[{', '.join(convert(arg) for arg in args)}]"
+                elif origin in (set, Set):
+                    return f"set[{', '.join(convert(arg) for arg in args)}]"
+                elif origin is Union:
                     return f"Union[{', '.join(convert(arg) for arg in args)}]"
-                return f"{origin.__name__}[{', '.join(convert(arg) for arg in args)}]"
+                elif origin is Optional:
+                    return f"Optional[{', '.join(convert(arg) for arg in args)}]"
+                else:
+                    return f"{origin.__name__}[{', '.join(convert(arg) for arg in args)}]"
             else:
                 return str(item)
 
